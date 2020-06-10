@@ -283,7 +283,9 @@ impl<'a> Tokenizer<'a> {
                     _ => State::Finish,
                 },
                 'a'..='z' | 'A'..='Z' => match self.peek() {
-                    Some(c2) if c2.is_digit(10) || c2.is_ascii_alphabetic() => State::Id,
+                    Some(c2) if c2.is_digit(10) || c2.is_ascii_alphabetic() || c2 == '_' => {
+                        State::Id
+                    }
                     _ => State::Finish,
                 },
                 '"' => State::Str,
@@ -339,24 +341,10 @@ impl<'a> Tokenizer<'a> {
     fn str_(&mut self, ch: char, tok: &mut String) -> State {
         match ch {
             '\\' => match self.peek() {
-                Some('n') => {
+                Some(c) if r#"ntfb\""#.contains(c) => {
                     self.next();
-                    tok.push('\n');
-                    State::Str
-                }
-                Some('t') => {
-                    self.next();
-                    tok.push('\t');
-                    State::Str
-                }
-                Some('f') => {
-                    self.next();
-                    tok.push('\x0c');
-                    State::Str
-                }
-                Some('b') => {
-                    self.next();
-                    tok.push('\x08');
+                    tok.push('\\');
+                    tok.push(c);
                     State::Str
                 }
                 Some('\0') => {
@@ -364,10 +352,12 @@ impl<'a> Tokenizer<'a> {
                     *tok = "String contains escaped null character".to_string();
                     State::Finish
                 }
-                _ => {
-                    tok.push(ch);
+                Some(c) => {
+                    self.next();
+                    tok.push(c);
                     State::Str
                 }
+                None => State::Finish,
             },
             '"' => {
                 tok.push(ch);
