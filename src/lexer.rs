@@ -37,6 +37,7 @@ pub enum TokenKind {
     Dot,        // .
     At,         // @
     SemiColon,  // ;
+    Colon,      // :
     OpenParen,  // (
     CloseParen, // )
     OpenBrace,  // {
@@ -67,6 +68,7 @@ impl From<String> for TokenKind {
             "." => TokenKind::Dot,
             "@" => TokenKind::At,
             ";" => TokenKind::SemiColon,
+            ":" => TokenKind::Colon,
             "(" => TokenKind::OpenParen,
             ")" => TokenKind::CloseParen,
             "{" => TokenKind::OpenBrace,
@@ -151,6 +153,7 @@ impl fmt::Debug for TokenKind {
             TokenKind::Dot => f.write_str("'.'"),
             TokenKind::At => f.write_str("'@'"),
             TokenKind::SemiColon => f.write_str("';'"),
+            TokenKind::Colon => f.write_str("':'"),
             TokenKind::OpenParen => f.write_str("'('"),
             TokenKind::CloseParen => f.write_str("')'"),
             TokenKind::OpenBrace => f.write_str("'{'"),
@@ -158,7 +161,7 @@ impl fmt::Debug for TokenKind {
             TokenKind::Comma => f.write_str("','"),
             TokenKind::Minus => f.write_str("'-'"),
             TokenKind::BoolConst(b) => f.write_fmt(format_args!("BOOL_CONST {}", b)),
-            TokenKind::Str(ref s) => f.write_fmt(format_args!("STR {}", s)),
+            TokenKind::Str(ref s) => f.write_fmt(format_args!(r#"STR_CONST "{}""#, s)),
             TokenKind::IntConst(i) => f.write_fmt(format_args!("INT_CONST {}", i)),
             TokenKind::Type(ref s) => f.write_fmt(format_args!("TYPEID {}", s)),
             TokenKind::Object(ref s) => f.write_fmt(format_args!("OBJECTID {}", s)),
@@ -168,18 +171,19 @@ impl fmt::Debug for TokenKind {
 }
 
 pub struct Token {
-    pub token: TokenKind,
+    pub kind: TokenKind,
     pub line: usize,
     pub col: usize,
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Debug)]
 enum State {
     Init,
     Number,
     Id,
     Str,
     Comment,
+    LineComment,
     Finish,
 }
 
@@ -227,7 +231,7 @@ impl<'a> Tokenizer<'a> {
             let tok_col = self.tok_col;
             self.tok_col = self.col;
             Some(Token {
-                token: TokenKind::from(tok),
+                kind: TokenKind::from(tok),
                 line: self.line,
                 col: tok_col,
             })
@@ -244,7 +248,11 @@ impl<'a> Tokenizer<'a> {
             tok.push(ch);
             match ch {
                 '-' => match self.peek() {
-                    Some(c2) if c2.is_digit(10) => State::Number,
+                    Some('-') => {
+                        tok.clear();
+                        self.next();
+                        State::LineComment
+                    }
                     _ => State::Finish,
                 },
                 '=' => match self.peek() {
@@ -295,7 +303,7 @@ impl<'a> Tokenizer<'a> {
     fn id(&mut self, ch: char, tok: &mut String) -> State {
         tok.push(ch);
         match self.peek() {
-            Some(c2) if c2.is_digit(10) || c2.is_ascii_alphabetic() => State::Id,
+            Some(c2) if c2.is_digit(10) || c2.is_ascii_alphabetic() || c2 == '_' => State::Id,
             _ => State::Finish,
         }
     }
@@ -395,22 +403,31 @@ impl<'a> Iterator for Tokenizer<'a> {
 
             match ch {
                 Some(c) => {
-                    self.update_pos(c);
                     state = match state {
                         State::Init => self.init(c, &mut tok),
                         State::Number => self.number(c, &mut tok),
                         State::Id => self.id(c, &mut tok),
                         State::Comment => self.comment(c),
                         State::Str => self.str_(c, &mut tok),
-                        State::Finish => break,
-                    }
+                        State::LineComment => match c {
+                            '\n' => State::Init,
+                            _ => State::LineComment,
+                        },
+                        State::Finish => State::Finish,
+                    };
+                    self.update_pos(c);
                 }
-                None => break,
+                None => state = State::Finish,
+            }
+
+            if state == State::Finish {
+                let tok = self.token(tok);
+                if let Some(c) = ch {
+                    self.update_pos(c);
+                }
+                self.tok_col = self.col;
+                break tok;
             }
         }
-
-        let tok = self.token(tok);
-        self.tok_col = self.col;
-        tok
     }
 }
