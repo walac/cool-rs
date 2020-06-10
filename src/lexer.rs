@@ -1,6 +1,11 @@
+use regex::Regex;
+use std::fmt;
 use std::iter::{Iterator, Peekable};
 use std::str::Chars;
-use regex::Regex;
+
+lazy_static! {
+    static ref ID_MATCH: Regex = Regex::new(r"[[:alpha:]][[:alnum:]_]*").unwrap();
+}
 
 pub enum TokenKind {
     Darrow,     // =>
@@ -34,6 +39,8 @@ pub enum TokenKind {
     SemiColon,  // ;
     OpenParen,  // (
     CloseParen, // )
+    OpenBrace,  // {
+    CloseBrace, // }
     Comma,      // ,
     Minus,      // -
     BoolConst(bool),
@@ -53,7 +60,7 @@ impl From<String> for TokenKind {
             "<=" => TokenKind::LessEqual,
             "+" => TokenKind::Plus,
             "/" => TokenKind::Div,
-            "~"=> TokenKind::Tilde,
+            "~" => TokenKind::Tilde,
             "*" => TokenKind::Mul,
             "<" => TokenKind::Less,
             "=" => TokenKind::Equal,
@@ -62,6 +69,8 @@ impl From<String> for TokenKind {
             ";" => TokenKind::SemiColon,
             "(" => TokenKind::OpenParen,
             ")" => TokenKind::CloseParen,
+            "{" => TokenKind::OpenBrace,
+            "}" => TokenKind::CloseBrace,
             "," => TokenKind::Comma,
             "-" => TokenKind::Minus,
             "class" => TokenKind::Class,
@@ -88,13 +97,12 @@ impl From<String> for TokenKind {
                 } else if symbol.starts_with('f') && low_case == "false" {
                     TokenKind::BoolConst(false)
                 } else if symbol.starts_with('"') && symbol.ends_with('"') {
-                    TokenKind::Str(symbol.get(1..(symbol.len()-1)).unwrap().to_string())
+                    TokenKind::Str(symbol.get(1..(symbol.len() - 1)).unwrap().to_string())
                 } else {
                     match symbol.parse::<i32>() {
                         Ok(n) => TokenKind::IntConst(n),
                         Err(_) => {
-                            let id_re = Regex::new(r"[[:alpha:]][[:alnum:]_]*").unwrap();
-                            if id_re.is_match(&symbol) {
+                            if ID_MATCH.is_match(&symbol) {
                                 if symbol.chars().nth(0).unwrap().is_ascii_uppercase() {
                                     TokenKind::Type(symbol)
                                 } else {
@@ -107,6 +115,54 @@ impl From<String> for TokenKind {
                     }
                 }
             }
+        }
+    }
+}
+
+impl fmt::Debug for TokenKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            TokenKind::Darrow => f.write_str("DARROW"),
+            TokenKind::Assign => f.write_str("ASSIGN"),
+            TokenKind::LessEqual => f.write_str("LE"),
+            TokenKind::Class => f.write_str("CLASS"),
+            TokenKind::If => f.write_str("IF"),
+            TokenKind::Else => f.write_str("ELSE"),
+            TokenKind::Fi => f.write_str("FI"),
+            TokenKind::In => f.write_str("IN"),
+            TokenKind::Inherits => f.write_str("INHERITS"),
+            TokenKind::Let => f.write_str("LET"),
+            TokenKind::Loop => f.write_str("LOOP"),
+            TokenKind::Pool => f.write_str("POOL"),
+            TokenKind::Then => f.write_str("THEN"),
+            TokenKind::While => f.write_str("WHILE"),
+            TokenKind::Case => f.write_str("CASE"),
+            TokenKind::Esac => f.write_str("ESAC"),
+            TokenKind::Of => f.write_str("OF"),
+            TokenKind::New => f.write_str("NEW"),
+            TokenKind::IsVoid => f.write_str("ISVOID"),
+            TokenKind::Not => f.write_str("NOT"),
+            TokenKind::Plus => f.write_str("'+'"),
+            TokenKind::Div => f.write_str("'/'"),
+            TokenKind::Tilde => f.write_str("'~'"),
+            TokenKind::Mul => f.write_str("'*'"),
+            TokenKind::Less => f.write_str("'<'"),
+            TokenKind::Equal => f.write_str("'='"),
+            TokenKind::Dot => f.write_str("'.'"),
+            TokenKind::At => f.write_str("'@'"),
+            TokenKind::SemiColon => f.write_str("';'"),
+            TokenKind::OpenParen => f.write_str("'('"),
+            TokenKind::CloseParen => f.write_str("')'"),
+            TokenKind::OpenBrace => f.write_str("'{'"),
+            TokenKind::CloseBrace => f.write_str("'}'"),
+            TokenKind::Comma => f.write_str("','"),
+            TokenKind::Minus => f.write_str("'-'"),
+            TokenKind::BoolConst(b) => f.write_fmt(format_args!("BOOL_CONST {}", b)),
+            TokenKind::Str(ref s) => f.write_fmt(format_args!("STR {}", s)),
+            TokenKind::IntConst(i) => f.write_fmt(format_args!("INT_CONST {}", i)),
+            TokenKind::Type(ref s) => f.write_fmt(format_args!("TYPEID {}", s)),
+            TokenKind::Object(ref s) => f.write_fmt(format_args!("OBJECTID {}", s)),
+            TokenKind::Err(ref s) => f.write_fmt(format_args!("ERROR {}", s)),
         }
     }
 }
@@ -195,14 +251,14 @@ impl<'a> Tokenizer<'a> {
                     Some('>') => {
                         tok.push(self.next().unwrap());
                         State::Finish
-                    },
+                    }
                     _ => State::Finish,
                 },
                 '<' => match self.peek() {
                     Some('-') | Some('=') => {
                         tok.push(self.next().unwrap());
                         State::Finish
-                    },
+                    }
                     _ => State::Finish,
                 },
                 '(' => match self.peek() {
@@ -211,12 +267,12 @@ impl<'a> Tokenizer<'a> {
                         self.inner_comments = 1;
                         tok.pop();
                         State::Comment
-                    },
+                    }
                     _ => State::Finish,
                 },
                 '0'..='9' => match self.peek() {
-                        Some(c2) if c2.is_digit(10) => State::Number,
-                        _ => State::Finish,
+                    Some(c2) if c2.is_digit(10) => State::Number,
+                    _ => State::Finish,
                 },
                 'a'..='z' | 'A'..='Z' => match self.peek() {
                     Some(c2) if c2.is_digit(10) || c2.is_ascii_alphabetic() => State::Id,
@@ -265,7 +321,7 @@ impl<'a> Tokenizer<'a> {
                     self.next();
                     self.inner_comments += 1;
                     State::Comment
-                },
+                }
                 _ => State::Comment,
             },
             _ => State::Comment,
@@ -274,43 +330,41 @@ impl<'a> Tokenizer<'a> {
 
     fn str_(&mut self, ch: char, tok: &mut String) -> State {
         match ch {
-            '\\' => {
-                match self.peek() {
-                    Some('n') => {
-                        self.next();
-                        tok.push('\n');
-                        State::Str
-                    },
-                    Some('t') => {
-                        self.next();
-                        tok.push('\t');
-                        State::Str
-                    },
-                    Some('f') => {
-                        self.next();
-                        tok.push('\x0c');
-                        State::Str
-                    },
-                    Some('b') => {
-                        self.next();
-                        tok.push('\x08');
-                        State::Str
-                    },
-                    Some('\0') => {
-                        self.next();
-                        *tok = "String contains escaped null character".to_string();
-                        State::Finish
-                    }
-                    _ => {
-                        tok.push(ch);
-                        State::Str
-                    }
+            '\\' => match self.peek() {
+                Some('n') => {
+                    self.next();
+                    tok.push('\n');
+                    State::Str
                 }
-            }
+                Some('t') => {
+                    self.next();
+                    tok.push('\t');
+                    State::Str
+                }
+                Some('f') => {
+                    self.next();
+                    tok.push('\x0c');
+                    State::Str
+                }
+                Some('b') => {
+                    self.next();
+                    tok.push('\x08');
+                    State::Str
+                }
+                Some('\0') => {
+                    self.next();
+                    *tok = "String contains escaped null character".to_string();
+                    State::Finish
+                }
+                _ => {
+                    tok.push(ch);
+                    State::Str
+                }
+            },
             '"' => {
                 tok.push(ch);
                 State::Finish
-            },
+            }
             '\n' => {
                 self.next();
                 *tok = "Unterminated string constant".to_string();
@@ -320,7 +374,7 @@ impl<'a> Tokenizer<'a> {
                 self.next();
                 *tok = "String contains null character".to_string();
                 State::Finish
-            },
+            }
             _ => {
                 tok.push(ch);
                 State::Str
@@ -350,7 +404,7 @@ impl<'a> Iterator for Tokenizer<'a> {
                         State::Str => self.str_(c, &mut tok),
                         State::Finish => break,
                     }
-                },
+                }
                 None => break,
             }
         }
