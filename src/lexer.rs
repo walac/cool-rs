@@ -185,6 +185,7 @@ enum State {
     Comment,
     LineComment,
     Finish,
+    Error,
 }
 
 pub struct Tokenizer<'a> {
@@ -224,16 +225,20 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
-    fn token(&mut self, tok: String) -> Option<Token> {
+    fn token(&mut self, tok: String, is_err: bool) -> Option<Token> {
         if tok.is_empty() {
             None
+        } else if is_err {
+            Some(Token {
+                kind: TokenKind::Err(tok),
+                line: self.line,
+                col: self.tok_col,
+            })
         } else {
-            let tok_col = self.tok_col;
-            self.tok_col = self.col;
             Some(Token {
                 kind: TokenKind::from(tok),
                 line: self.line,
-                col: tok_col,
+                col: self.tok_col,
             })
         }
     }
@@ -352,6 +357,12 @@ impl<'a> Tokenizer<'a> {
                     *tok = "String contains escaped null character".to_string();
                     State::Finish
                 }
+                Some('\n') => {
+                    self.next();
+                    self.update_pos('\n');
+                    tok.push_str(r"\n");
+                    State::Str
+                }
                 Some(c) => {
                     self.next();
                     tok.push(c);
@@ -365,13 +376,14 @@ impl<'a> Tokenizer<'a> {
             }
             '\n' => {
                 self.next();
-                *tok = "Unterminated string constant".to_string();
-                State::Finish
+                eprintln!("Str Error({}): \"{}\"", self.line, tok);
+                *tok = "\"Unterminated string constant\"".to_string();
+                State::Error
             }
             '\0' => {
                 self.next();
-                *tok = "String contains null character".to_string();
-                State::Finish
+                *tok = "\"String contains null character\"".to_string();
+                State::Error
             }
             _ => {
                 tok.push(ch);
@@ -404,17 +416,15 @@ impl<'a> Iterator for Tokenizer<'a> {
                             _ => State::LineComment,
                         },
                         State::Finish => State::Finish,
+                        State::Error => State::Error,
                     };
                     self.update_pos(c);
                 }
                 None => state = State::Finish,
             }
 
-            if state == State::Finish {
-                let tok = self.token(tok);
-                if let Some(c) = ch {
-                    self.update_pos(c);
-                }
+            if state == State::Finish || state == State::Error {
+                let tok = self.token(tok, state == State::Error);
                 self.tok_col = self.col;
                 break tok;
             }
