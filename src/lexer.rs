@@ -165,7 +165,7 @@ impl fmt::Debug for TokenKind {
             TokenKind::IntConst(i) => f.write_fmt(format_args!("INT_CONST {}", i)),
             TokenKind::Type(ref s) => f.write_fmt(format_args!("TYPEID {}", s)),
             TokenKind::Object(ref s) => f.write_fmt(format_args!("OBJECTID {}", s)),
-            TokenKind::Err(ref s) => f.write_fmt(format_args!("ERROR {}", s)),
+            TokenKind::Err(ref s) => f.write_fmt(format_args!("ERROR \"{}\"", s)),
         }
     }
 }
@@ -375,14 +375,11 @@ impl<'a> Tokenizer<'a> {
                 State::Finish
             }
             '\n' => {
-                self.next();
-                eprintln!("Str Error({}): \"{}\"", self.line, tok);
-                *tok = "\"Unterminated string constant\"".to_string();
+                *tok = "Unterminated string constant".to_string();
                 State::Error
             }
             '\0' => {
-                self.next();
-                *tok = "\"String contains null character\"".to_string();
+                *tok = "String contains null character".to_string();
                 State::Error
             }
             _ => {
