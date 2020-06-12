@@ -283,6 +283,14 @@ impl<'a> Tokenizer<'a> {
                     }
                     _ => State::Finish,
                 },
+                '*' => match self.peek() {
+                    Some(')') => {
+                        self.next();
+                        *tok = "Unmatched *)".to_owned();
+                        State::Error
+                    }
+                    _ => State::Finish,
+                },
                 '0'..='9' => match self.peek() {
                     Some(c2) if c2.is_digit(10) => State::Number,
                     _ => State::Finish,
@@ -400,9 +408,9 @@ impl<'a> Iterator for Tokenizer<'a> {
         loop {
             let ch = self.next();
 
-            match ch {
+            state = match ch {
                 Some(c) => {
-                    state = match state {
+                    let state = match state {
                         State::Init => self.init(c, &mut tok),
                         State::Number => self.number(c, &mut tok),
                         State::Id => self.id(c, &mut tok),
@@ -416,9 +424,16 @@ impl<'a> Iterator for Tokenizer<'a> {
                         State::Error => State::Error,
                     };
                     self.update_pos(c);
+                    state
                 }
-                None => state = State::Finish,
-            }
+                None => match state {
+                    State::Comment => {
+                        tok = "Unmatched *)".to_owned();
+                        State::Error
+                    }
+                    _ => State::Finish,
+                },
+            };
 
             if state == State::Finish || state == State::Error {
                 let tok = self.token(tok, state == State::Error);
