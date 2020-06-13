@@ -46,7 +46,7 @@ pub enum TokenKind {
     Minus,      // -
     BoolConst(bool),
     Str(String),
-    IntConst(i32),
+    IntConst(String),
     Type(String),
     Object(String),
     Err(String),
@@ -101,19 +101,16 @@ impl From<String> for TokenKind {
                 } else if symbol.starts_with('"') && symbol.ends_with('"') {
                     TokenKind::Str(symbol.get(1..(symbol.len() - 1)).unwrap().to_string())
                 } else {
-                    match symbol.parse::<i32>() {
-                        Ok(n) => TokenKind::IntConst(n),
-                        Err(_) => {
-                            if ID_MATCH.is_match(&symbol) {
-                                if symbol.chars().nth(0).unwrap().is_ascii_uppercase() {
-                                    TokenKind::Type(symbol)
-                                } else {
-                                    TokenKind::Object(symbol)
-                                }
-                            } else {
-                                TokenKind::Err(symbol)
-                            }
+                    if symbol.chars().all(|c| c.is_digit(10)) {
+                        TokenKind::IntConst(symbol)
+                    } else if ID_MATCH.is_match(&symbol) {
+                        if symbol.chars().nth(0).unwrap().is_ascii_uppercase() {
+                            TokenKind::Type(symbol)
+                        } else {
+                            TokenKind::Object(symbol)
                         }
+                    } else {
+                        TokenKind::Err(symbol)
                     }
                 }
             }
@@ -162,7 +159,7 @@ impl fmt::Debug for TokenKind {
             TokenKind::Minus => f.write_str("'-'"),
             TokenKind::BoolConst(b) => f.write_fmt(format_args!("BOOL_CONST {}", b)),
             TokenKind::Str(ref s) => f.write_fmt(format_args!(r#"STR_CONST "{}""#, s)),
-            TokenKind::IntConst(i) => f.write_fmt(format_args!("INT_CONST {}", i)),
+            TokenKind::IntConst(ref i) => f.write_fmt(format_args!("INT_CONST {}", i)),
             TokenKind::Type(ref s) => f.write_fmt(format_args!("TYPEID {}", s)),
             TokenKind::Object(ref s) => f.write_fmt(format_args!("OBJECTID {}", s)),
             TokenKind::Err(ref s) => f.write_fmt(format_args!("ERROR \"{}\"", s)),
