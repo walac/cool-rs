@@ -8,6 +8,8 @@ lazy_static! {
     static ref ID_MATCH: Regex = Regex::new(r"[[:alpha:]][[:alnum:]_]*").unwrap();
 }
 
+const MAX_STR: usize = 1026;
+
 pub enum TokenKind {
     Darrow,     // =>
     Assign,     // <-
@@ -401,7 +403,11 @@ impl<'a> Tokenizer<'a> {
             },
             '"' => {
                 tok.push(ch);
-                State::Finish
+                if tok.len() > MAX_STR {
+                    State::Error
+                } else {
+                    State::Finish
+                }
             }
             '\n' => {
                 *tok = "Unterminated string constant".to_string();
