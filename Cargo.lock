@@ -13,10 +13,17 @@ dependencies = [
 name = "cool-rs"
 version = "0.1.0"
 dependencies = [
+ "encoding8",
  "glob",
  "lazy_static",
  "regex",
 ]
+
+[[package]]
+name = "encoding8"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3144e455c7aeda487c72555cac2ef84ccac173b29a57b07382ba27016e57b246"
 
 [[package]]
 name = "glob"

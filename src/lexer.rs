@@ -1,3 +1,4 @@
+use encoding8::ascii::is_printable;
 use regex::Regex;
 use std::fmt;
 use std::iter::{Iterator, Peekable};
@@ -299,6 +300,14 @@ impl<'a> Tokenizer<'a> {
                     _ => State::Finish,
                 },
                 '"' => State::Str,
+                '\\' => {
+                    *tok = r"\\".to_owned();
+                    State::Error
+                }
+                c if !is_printable(c as u8) => {
+                    *tok = format!(r"\{:>03}", c as u8);
+                    State::Error
+                }
                 _ => State::Finish,
             }
         }
