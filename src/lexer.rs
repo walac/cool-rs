@@ -360,10 +360,25 @@ impl<'a> Tokenizer<'a> {
                     tok.push(c);
                     State::Str
                 }
+                Some('\t') => {
+                    self.next();
+                    tok.push_str(r"\t");
+                    State::Str
+                }
+                Some('\u{8}') => {
+                    self.next();
+                    tok.push_str(r"\b");
+                    State::Str
+                }
+                Some('\u{c}') => {
+                    self.next();
+                    tok.push_str(r"\f");
+                    State::Str
+                }
                 Some('\0') => {
                     self.next();
-                    *tok = "String contains escaped null character".to_string();
-                    State::Finish
+                    *tok = "String contains escaped null character.".to_string();
+                    State::Error
                 }
                 Some('\n') => {
                     self.next();
@@ -385,6 +400,16 @@ impl<'a> Tokenizer<'a> {
             '\n' => {
                 *tok = "Unterminated string constant".to_string();
                 State::Error
+            }
+            '\r' => {
+                self.next();
+                tok.push_str(r#"\015""#);
+                State::Finish
+            }
+            '\u{1b}' => {
+                self.next();
+                tok.push_str(r#"\033""#);
+                State::Finish
             }
             '\0' => {
                 *tok = "String contains null character".to_string();
@@ -429,6 +454,10 @@ impl<'a> Iterator for Tokenizer<'a> {
                 None => match state {
                     State::Comment => {
                         tok = "Unmatched *)".to_owned();
+                        State::Error
+                    }
+                    State::Str => {
+                        tok = "EOF in string constant".to_owned();
                         State::Error
                     }
                     _ => State::Finish,
