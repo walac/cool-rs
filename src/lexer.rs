@@ -207,12 +207,8 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
-    fn next(&mut self) -> Option<char> {
-        self.iter.next()
-    }
-
     fn peek(&mut self) -> Option<char> {
-        self.iter.peek().map(|&c| c)
+        self.iter.peek().cloned()
     }
 
     fn update_pos(&mut self, ch: char) {
@@ -255,28 +251,28 @@ impl<'a> Tokenizer<'a> {
                 '-' => match self.peek() {
                     Some('-') => {
                         tok.clear();
-                        self.next();
+                        self.iter.next();
                         State::LineComment
                     }
                     _ => State::Finish,
                 },
                 '=' => match self.peek() {
                     Some('>') => {
-                        tok.push(self.next().unwrap());
+                        tok.push(self.iter.next().unwrap());
                         State::Finish
                     }
                     _ => State::Finish,
                 },
                 '<' => match self.peek() {
                     Some('-') | Some('=') => {
-                        tok.push(self.next().unwrap());
+                        tok.push(self.iter.next().unwrap());
                         State::Finish
                     }
                     _ => State::Finish,
                 },
                 '(' => match self.peek() {
                     Some('*') => {
-                        self.next();
+                        self.iter.next();
                         self.inner_comments = 1;
                         tok.pop();
                         State::Comment
@@ -285,7 +281,7 @@ impl<'a> Tokenizer<'a> {
                 },
                 '*' => match self.peek() {
                     Some(')') => {
-                        self.next();
+                        self.iter.next();
                         *tok = "Unmatched *)".to_owned();
                         State::Error
                     }
@@ -336,7 +332,7 @@ impl<'a> Tokenizer<'a> {
             '*' => match self.peek() {
                 None => State::Comment,
                 Some(')') => {
-                    self.next();
+                    self.iter.next();
                     self.inner_comments -= 1;
                     if self.inner_comments == 0 {
                         State::Init
@@ -349,7 +345,7 @@ impl<'a> Tokenizer<'a> {
             '(' => match self.peek() {
                 None => State::Comment,
                 Some('*') => {
-                    self.next();
+                    self.iter.next();
                     self.inner_comments += 1;
                     State::Comment
                 }
@@ -359,43 +355,57 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
+    fn skip_str(&mut self) {
+        // skip the string
+        loop {
+            match self.iter.next() {
+                Some('"') | None => break,
+                _ => continue,
+            }
+        }
+    }
+
     fn str_(&mut self, ch: char, tok: &mut String) -> State {
         match ch {
             '\\' => match self.peek() {
                 Some(c) if r#"ntfb\""#.contains(c) => {
-                    self.next();
+                    self.iter.next();
                     tok.push('\\');
                     tok.push(c);
                     State::Str
                 }
                 Some('\t') => {
-                    self.next();
+                    self.iter.next();
                     tok.push_str(r"\t");
                     State::Str
                 }
                 Some('\u{8}') => {
-                    self.next();
+                    self.iter.next();
                     tok.push_str(r"\b");
                     State::Str
                 }
                 Some('\u{c}') => {
-                    self.next();
+                    self.iter.next();
                     tok.push_str(r"\f");
                     State::Str
                 }
                 Some('\0') => {
-                    self.next();
+                    self.skip_str();
                     *tok = "String contains escaped null character.".to_string();
                     State::Error
                 }
                 Some('\n') => {
-                    self.next();
+                    self.iter.next();
                     self.update_pos('\n');
                     tok.push_str(r"\n");
                     State::Str
                 }
+                Some('\\') => {
+                    self.iter.next();
+                    State::Str
+                }
                 Some(c) => {
-                    self.next();
+                    self.iter.next();
                     tok.push(c);
                     State::Str
                 }
@@ -403,7 +413,8 @@ impl<'a> Tokenizer<'a> {
             },
             '"' => {
                 tok.push(ch);
-                if tok.len() > MAX_STR {
+                if tok.chars().filter(|&c| c != '\\').count() > MAX_STR {
+                    *tok = "String constant too long".to_owned();
                     State::Error
                 } else {
                     State::Finish
@@ -414,17 +425,18 @@ impl<'a> Tokenizer<'a> {
                 State::Error
             }
             '\r' => {
-                self.next();
+                self.iter.next();
                 tok.push_str(r#"\015""#);
                 State::Finish
             }
             '\u{1b}' => {
-                self.next();
+                self.iter.next();
                 tok.push_str(r#"\033""#);
                 State::Finish
             }
             '\0' => {
-                *tok = "String contains null character".to_string();
+                self.skip_str();
+                *tok = "String contains null character.".to_string();
                 State::Error
             }
             _ => {
@@ -443,7 +455,7 @@ impl<'a> Iterator for Tokenizer<'a> {
         let mut state = State::Init;
 
         loop {
-            let ch = self.next();
+            let ch = self.iter.next();
 
             state = match ch {
                 Some(c) => {
@@ -465,7 +477,7 @@ impl<'a> Iterator for Tokenizer<'a> {
                 }
                 None => match state {
                     State::Comment => {
-                        tok = "Unmatched *)".to_owned();
+                        tok = "EOF in comment".to_owned();
                         State::Error
                     }
                     State::Str => {
