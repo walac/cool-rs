@@ -1,5 +1,6 @@
 use encoding8::ascii::is_printable;
 use regex::Regex;
+use std::borrow::Cow;
 use std::fmt;
 use std::iter::{Iterator, Peekable};
 use std::str::Chars;
@@ -9,6 +10,24 @@ lazy_static! {
 }
 
 const MAX_STR: usize = 1026;
+
+fn escaped_string(s: &str) -> String {
+    s.chars()
+        .map(|c| -> Cow<str> {
+            match c {
+                '\\' => r"\\".into(),
+                '\"' => "\\\"".into(),
+                '\n' => r"\n".into(),
+                '\t' => r"\t".into(),
+                '\r' => r"\015".into(),
+                '\u{8}' => r"\b".into(),
+                '\u{c}' => r"\f".into(),
+                _ if is_printable(c as u8) => format!("{}", c).into(),
+                _ => format!(r"\{:03o}", c as u8).into(),
+            }
+        })
+        .collect()
+}
 
 pub enum TokenKind {
     Darrow,     // =>
@@ -161,7 +180,9 @@ impl fmt::Debug for TokenKind {
             TokenKind::Comma => f.write_str("','"),
             TokenKind::Minus => f.write_str("'-'"),
             TokenKind::BoolConst(b) => f.write_fmt(format_args!("BOOL_CONST {}", b)),
-            TokenKind::Str(ref s) => f.write_fmt(format_args!(r#"STR_CONST "{}""#, s)),
+            TokenKind::Str(ref s) => {
+                f.write_fmt(format_args!(r#"STR_CONST "{}""#, escaped_string(s)))
+            }
             TokenKind::IntConst(ref i) => f.write_fmt(format_args!("INT_CONST {}", i)),
             TokenKind::Type(ref s) => f.write_fmt(format_args!("TYPEID {}", s)),
             TokenKind::Object(ref s) => f.write_fmt(format_args!("OBJECTID {}", s)),
@@ -368,25 +389,24 @@ impl<'a> Tokenizer<'a> {
     fn str_(&mut self, ch: char, tok: &mut String) -> State {
         match ch {
             '\\' => match self.peek() {
-                Some(c) if r#"ntfb\""#.contains(c) => {
+                Some('"') => {
                     self.iter.next();
-                    tok.push('\\');
-                    tok.push(c);
+                    tok.push('\"');
                     State::Str
                 }
-                Some('\t') => {
+                Some('\t') | Some('t') => {
                     self.iter.next();
-                    tok.push_str(r"\t");
+                    tok.push('\t');
                     State::Str
                 }
-                Some('\u{8}') => {
+                Some('\u{8}') | Some('b') => {
                     self.iter.next();
-                    tok.push_str(r"\b");
+                    tok.push('\u{8}');
                     State::Str
                 }
-                Some('\u{c}') => {
+                Some('\u{c}') | Some('f') => {
                     self.iter.next();
-                    tok.push_str(r"\f");
+                    tok.push('\u{c}');
                     State::Str
                 }
                 Some('\0') => {
@@ -394,14 +414,15 @@ impl<'a> Tokenizer<'a> {
                     *tok = "String contains escaped null character.".to_string();
                     State::Error
                 }
-                Some('\n') => {
+                Some('n') => {
                     self.iter.next();
-                    self.update_pos('\n');
-                    tok.push_str(r"\n");
+                    tok.push('\n');
                     State::Str
                 }
-                Some('\\') => {
+                Some('\n') => {
+                    self.update_pos('\n');
                     self.iter.next();
+                    tok.push('\n');
                     State::Str
                 }
                 Some(c) => {
@@ -413,7 +434,7 @@ impl<'a> Tokenizer<'a> {
             },
             '"' => {
                 tok.push(ch);
-                if tok.chars().filter(|&c| c != '\\').count() > MAX_STR {
+                if tok.len() > MAX_STR {
                     *tok = "String constant too long".to_owned();
                     State::Error
                 } else {
@@ -426,12 +447,14 @@ impl<'a> Tokenizer<'a> {
             }
             '\r' => {
                 self.iter.next();
-                tok.push_str(r#"\015""#);
+                tok.push('\r');
+                tok.push('"');
                 State::Finish
             }
             '\u{1b}' => {
                 self.iter.next();
-                tok.push_str(r#"\033""#);
+                tok.push('\u{1b}');
+                tok.push('"');
                 State::Finish
             }
             '\0' => {
