@@ -11,6 +11,7 @@ lazy_static! {
 
 const MAX_STR: usize = 1026;
 
+/// Return the string formatted for escaped characters
 fn escaped_string(s: &str) -> String {
     s.chars()
         .map(|c| -> Cow<str> {
@@ -22,6 +23,8 @@ fn escaped_string(s: &str) -> String {
                 '\r' => r"\015".into(),
                 '\u{8}' => r"\b".into(),
                 '\u{c}' => r"\f".into(),
+                // XXX: Allocating a new String for a single character
+                // is a waste of resources
                 _ if is_printable(c as u8) => format!("{}", c).into(),
                 _ => format!(r"\{:03o}", c as u8).into(),
             }
@@ -29,6 +32,7 @@ fn escaped_string(s: &str) -> String {
         .collect()
 }
 
+/// The type hold the token category and value, if applicable
 pub enum TokenKind {
     Darrow,     // =>
     Assign,     // <-
@@ -123,6 +127,11 @@ impl From<String> for TokenKind {
                 } else if symbol.starts_with('"') && symbol.ends_with('"') {
                     TokenKind::Str(symbol.get(1..(symbol.len() - 1)).unwrap().to_string())
                 } else {
+                    // XXX: we have to hold integers in string form
+                    // because there is a test for a really long number
+                    // that won't pass if we try to parse it. Maybe we
+                    // should delete this test as store integer constants in
+                    // a integer type.
                     if symbol.chars().all(|c| c.is_digit(10)) {
                         TokenKind::IntConst(symbol)
                     } else if ID_MATCH.is_match(&symbol) {
@@ -191,12 +200,14 @@ impl fmt::Debug for TokenKind {
     }
 }
 
+/// Token is our TokenKind plus file position information
 pub struct Token {
     pub kind: TokenKind,
     pub line: usize,
     pub col: usize,
 }
 
+/// The tokenizer DFA states (kind of)
 #[derive(PartialEq, Eq, Debug)]
 enum State {
     Init,
@@ -209,6 +220,7 @@ enum State {
     Error,
 }
 
+/// Tokenizer is an iterator that returns the next token
 pub struct Tokenizer<'a> {
     iter: Peekable<Chars<'a>>,
     line: usize,
@@ -218,6 +230,8 @@ pub struct Tokenizer<'a> {
 }
 
 impl<'a> Tokenizer<'a> {
+    /// Create a new Tokenizer from the source code contained
+    /// in the string `src`.
     pub fn new(src: &'a str) -> Tokenizer<'a> {
         Tokenizer {
             iter: src.chars().peekable(),
@@ -228,10 +242,13 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
+    /// Get the next symbol from the input but don't
+    /// remove it.
     fn peek(&mut self) -> Option<char> {
         self.iter.peek().cloned()
     }
 
+    /// Update the position information of the input
     fn update_pos(&mut self, ch: char) {
         if ch == '\n' {
             self.line += 1;
@@ -242,7 +259,8 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
-    fn token(&mut self, tok: String, is_err: bool) -> Option<Token> {
+    /// create a new Token object
+    fn new_token(&mut self, tok: String, is_err: bool) -> Option<Token> {
         if tok.is_empty() {
             None
         } else if is_err {
@@ -261,6 +279,7 @@ impl<'a> Tokenizer<'a> {
     }
 }
 
+// From we implement the tokenizer state machine
 impl<'a> Tokenizer<'a> {
     fn init(&mut self, ch: char, tok: &mut String) -> State {
         if ch.is_ascii_whitespace() || ch == '\u{b}' {
@@ -270,6 +289,7 @@ impl<'a> Tokenizer<'a> {
             tok.push(ch);
             match ch {
                 '-' => match self.peek() {
+                    // comment
                     Some('-') => {
                         tok.clear();
                         self.iter.next();
@@ -278,6 +298,7 @@ impl<'a> Tokenizer<'a> {
                     _ => State::Finish,
                 },
                 '=' => match self.peek() {
+                    // darrow
                     Some('>') => {
                         tok.push(self.iter.next().unwrap());
                         State::Finish
@@ -285,6 +306,7 @@ impl<'a> Tokenizer<'a> {
                     _ => State::Finish,
                 },
                 '<' => match self.peek() {
+                    // assign
                     Some('-') | Some('=') => {
                         tok.push(self.iter.next().unwrap());
                         State::Finish
@@ -301,6 +323,8 @@ impl<'a> Tokenizer<'a> {
                     _ => State::Finish,
                 },
                 '*' => match self.peek() {
+                    // found a closing comment but there is no
+                    // matching open comment symbol
                     Some(')') => {
                         self.iter.next();
                         *tok = "Unmatched *)".to_owned();
@@ -512,7 +536,7 @@ impl<'a> Iterator for Tokenizer<'a> {
             };
 
             if state == State::Finish || state == State::Error {
-                let tok = self.token(tok, state == State::Error);
+                let tok = self.new_token(tok, state == State::Error);
                 self.tok_col = self.col;
                 break tok;
             }
