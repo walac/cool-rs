@@ -263,7 +263,7 @@ impl<'a> Tokenizer<'a> {
 
 impl<'a> Tokenizer<'a> {
     fn init(&mut self, ch: char, tok: &mut String) -> State {
-        if ch.is_ascii_whitespace() {
+        if ch.is_ascii_whitespace() || ch == '\u{b}' {
             self.tok_col = self.col;
             State::Init
         } else {
